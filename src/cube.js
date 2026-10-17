@@ -97,6 +97,7 @@ export class RubiksCube {
     this.current = null;
     this.turnDuration = 260;
     this.onChange = () => {};
+    this.idleWaiters = [];
     this.build();
   }
 
@@ -217,7 +218,15 @@ export class RubiksCube {
     this.group.remove(pivot);
     this.current = null;
     if (record) this.history.push(move);
+    if (!this.isBusy) {
+      for (const resolve of this.idleWaiters.splice(0)) resolve();
+    }
     this.onChange();
+  }
+
+  /** Resolves once every queued move has finished. */
+  whenIdle() {
+    return this.isBusy ? new Promise((resolve) => this.idleWaiters.push(resolve)) : Promise.resolve();
   }
 
   setStickerColor(sticker, color) {
@@ -263,6 +272,17 @@ export class RubiksCube {
   /** The color letter (or null if blank) at each of the 54 facelets. */
   getFacelets() {
     return this.getFaceletStickers().map((s) => s.userData.color);
+  }
+
+  /**
+   * Facelets named by where each color's center currently sits, so the result
+   * describes the cube correctly even after middle-layer turns move the centers.
+   */
+  getStateString() {
+    const colors = this.getFacelets();
+    const faceOf = {};
+    FACELET_ORDER.forEach((face, i) => (faceOf[colors[i * 9 + 4]] = face));
+    return colors.map((c) => faceOf[c] ?? '?').join('');
   }
 
   setFacelets(colors) {

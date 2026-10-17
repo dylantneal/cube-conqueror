@@ -155,3 +155,5 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .status.error { color: var(--error); }
 .status.success { color: var(--success); }
+
+button:disabled { opacity: 0.55; cursor: progress; }

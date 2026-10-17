@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RubiksCube, randomScramble, FACE_COLORS } from './cube.js';
 import { validateFacelets, COLOR_NAMES, FACE_ORDER } from './validate.js';
+import { solve } from './solver.js';
 
 const stage = document.getElementById('stage');
 
@@ -31,6 +32,7 @@ let selectedColor = 'U';
 let savedFacelets = null;
 let notice = '';
 let highlighted = [];
+let solution = null;
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -147,7 +149,12 @@ function renderStatus() {
     statusEl.textContent = notice;
     return;
   }
-  if (notice && !cube.history.length) {
+  if (solution) {
+    statusEl.textContent = solution.length
+      ? `Solution in ${solution.length} moves: ${solution.join(' ')}`
+      : 'Already solved!';
+    statusEl.classList.add('success');
+  } else if (notice && !cube.history.length) {
     statusEl.textContent = notice;
     statusEl.classList.add('success');
   } else if (cube.history.length && !cube.isBusy && cube.isSolved()) {
@@ -175,7 +182,17 @@ function setMode(next) {
   renderStatus();
 }
 
-cube.onChange = renderStatus;
+function refresh() {
+  watchButton.hidden = !solution || !solution.length || watching;
+  renderStatus();
+}
+
+cube.onChange = () => {
+  // Any turn the user makes invalidates a solution shown earlier, except the
+  // solution's own moves while they play.
+  if (!watching) solution = null;
+  refresh();
+};
 
 // ---- Play mode ----
 
@@ -193,8 +210,49 @@ for (const face of ['U', 'D', 'L', 'R', 'F', 'B']) {
 document.getElementById('scramble').addEventListener('click', () => {
   if (cube.isBusy) return;
   notice = '';
+  solution = null;
   cube.play(randomScramble(), { duration: 110 });
 });
+const solveButton = document.getElementById('solve');
+const watchButton = document.getElementById('watch');
+let watching = false;
+
+solveButton.addEventListener('click', async () => {
+  if (cube.isBusy) return;
+  const state = cube.getStateString();
+  const check = validateFacelets([...state]);
+  if (!check.ok) {
+    showError(check.message);
+    return;
+  }
+  solveButton.disabled = true;
+  notice = '';
+  solution = null;
+  statusEl.classList.remove('error', 'success');
+  statusEl.textContent = 'Finding the shortest solution...';
+  try {
+    solution = await solve(state);
+  } catch (err) {
+    showError(`The solver couldn't solve this cube (${err.message}).`);
+  } finally {
+    solveButton.disabled = false;
+  }
+  refresh();
+});
+
+watchButton.addEventListener('click', () => {
+  if (!solution || cube.isBusy) return;
+  watching = true;
+  watchButton.hidden = true;
+  cube.history = [];
+  cube.play(solution, { duration: 380 });
+  cube.whenIdle().then(() => {
+    watching = false;
+    solution = null;
+    refresh();
+  });
+});
+
 document.getElementById('undo').addEventListener('click', () => cube.undo());
 document.getElementById('reset').addEventListener('click', () => {
   notice = '';
@@ -297,7 +355,7 @@ document.getElementById('check').addEventListener('click', () => {
     return;
   }
   cube.history = [];
-  notice = 'Your cube is in! Solving it comes in the next step.';
+  notice = 'Your cube is in! Tap Solve to find the shortest solution.';
   setMode('play');
 });
 
