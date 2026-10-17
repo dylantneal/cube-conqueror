@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { RubiksCube, randomScramble, FACE_COLORS } from './cube.js';
+import { RubiksCube, randomScramble, invertMove, FACE_COLORS } from './cube.js';
 import { validateFacelets, COLOR_NAMES, FACE_ORDER } from './validate.js';
 import { solve } from './solver.js';
+import { TurnArrow } from './arrow.js';
 
 const stage = document.getElementById('stage');
 
@@ -26,13 +27,16 @@ camera.position.set(5.2, 4.2, 6.4);
 const cube = new RubiksCube();
 scene.add(cube.group);
 
-// 'play' turns layers; 'paint' colors stickers to match the user's cube.
+const arrow = new TurnArrow();
+scene.add(arrow.group);
+
+// 'play' turns layers; 'paint' colors stickers to match the user's cube;
+// 'guide' walks through a solution one move at a time.
 let mode = 'play';
 let selectedColor = 'U';
 let savedFacelets = null;
 let notice = '';
 let highlighted = [];
-let solution = null;
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -67,6 +71,8 @@ function snapToAxis(v) {
 // Registered before the orbit controls so a drag on the cube can claim the
 // pointer before the controls start orbiting.
 renderer.domElement.addEventListener('pointerdown', (event) => {
+  // While guiding, the cube must follow the solution, so drags only look around.
+  if (mode === 'guide') return;
   if (mode === 'paint') {
     // In paint mode every drag orbits; a tap without movement paints.
     tap = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
@@ -135,26 +141,23 @@ controls.maxDistance = 16;
 const hintEl = document.getElementById('hint');
 const playPanel = document.getElementById('play-panel');
 const paintPanel = document.getElementById('paint-panel');
+const guidePanel = document.getElementById('guide-panel');
 const statusEl = document.getElementById('status');
 const paletteEl = document.getElementById('palette');
 
 const HINTS = {
   play: 'Drag a face to turn it. Drag the background to look around.',
+  guide: 'Hold your cube with white on top and green facing you. Do each move on your cube, then tap Next.',
   paint: 'Hold your cube with the white center on top and green facing you. Pick a color, then tap stickers to match. Drag to look around.',
 };
 
 function renderStatus() {
   statusEl.classList.remove('error', 'success');
-  if (mode === 'paint') {
-    statusEl.textContent = notice;
+  if (mode !== 'play') {
+    statusEl.textContent = mode === 'paint' ? notice : '';
     return;
   }
-  if (solution) {
-    statusEl.textContent = solution.length
-      ? `Solution in ${solution.length} moves: ${solution.join(' ')}`
-      : 'Already solved!';
-    statusEl.classList.add('success');
-  } else if (notice && !cube.history.length) {
+  if (notice && !cube.history.length) {
     statusEl.textContent = notice;
     statusEl.classList.add('success');
   } else if (cube.history.length && !cube.isBusy && cube.isSolved()) {
@@ -178,21 +181,13 @@ function setMode(next) {
   hintEl.textContent = HINTS[mode];
   playPanel.hidden = mode !== 'play';
   paintPanel.hidden = mode !== 'paint';
+  guidePanel.hidden = mode !== 'guide';
+  if (mode !== 'guide') arrow.show(null);
   setHighlight([]);
   renderStatus();
 }
 
-function refresh() {
-  watchButton.hidden = !solution || !solution.length || watching;
-  renderStatus();
-}
-
-cube.onChange = () => {
-  // Any turn the user makes invalidates a solution shown earlier, except the
-  // solution's own moves while they play.
-  if (!watching) solution = null;
-  refresh();
-};
+cube.onChange = renderStatus;
 
 // ---- Play mode ----
 
@@ -210,12 +205,9 @@ for (const face of ['U', 'D', 'L', 'R', 'F', 'B']) {
 document.getElementById('scramble').addEventListener('click', () => {
   if (cube.isBusy) return;
   notice = '';
-  solution = null;
   cube.play(randomScramble(), { duration: 110 });
 });
 const solveButton = document.getElementById('solve');
-const watchButton = document.getElementById('watch');
-let watching = false;
 
 solveButton.addEventListener('click', async () => {
   if (cube.isBusy) return;
@@ -227,30 +219,22 @@ solveButton.addEventListener('click', async () => {
   }
   solveButton.disabled = true;
   notice = '';
-  solution = null;
   statusEl.classList.remove('error', 'success');
   statusEl.textContent = 'Finding the shortest solution...';
   try {
-    solution = await solve(state);
+    const moves = await solve(state);
+    if (moves.length) {
+      startGuide(moves);
+    } else {
+      notice = 'Already solved!';
+      cube.history = [];
+      renderStatus();
+    }
   } catch (err) {
     showError(`The solver couldn't solve this cube (${err.message}).`);
   } finally {
     solveButton.disabled = false;
   }
-  refresh();
-});
-
-watchButton.addEventListener('click', () => {
-  if (!solution || cube.isBusy) return;
-  watching = true;
-  watchButton.hidden = true;
-  cube.history = [];
-  cube.play(solution, { duration: 380 });
-  cube.whenIdle().then(() => {
-    watching = false;
-    solution = null;
-    refresh();
-  });
 });
 
 document.getElementById('undo').addEventListener('click', () => cube.undo());
@@ -260,7 +244,15 @@ document.getElementById('reset').addEventListener('click', () => {
 });
 
 // Keyboard: a letter turns that face, Shift turns it counterclockwise.
+// While guiding, the arrow keys step through the solution.
 window.addEventListener('keydown', (event) => {
+  if (mode === 'guide') {
+    if (event.key === 'ArrowRight') nextStep();
+    else if (event.key === 'ArrowLeft') previousStep();
+    else return;
+    event.preventDefault();
+    return;
+  }
   if (mode !== 'play') return;
   const face = event.key.toUpperCase();
   if (!'UDLRFBMES'.includes(face) || event.metaKey || event.ctrlKey || event.key.length !== 1) return;
@@ -376,6 +368,113 @@ document.getElementById('cancel').addEventListener('click', () => {
   setMode('play');
 });
 
+// ---- Guide mode ----
+
+const FACE_NAMES = { U: 'top', D: 'bottom', L: 'left', R: 'right', F: 'front', B: 'back' };
+const GUIDE_TURN_MS = 450;
+
+const guide = { moves: [], step: 0 };
+const stepCountEl = document.getElementById('step-count');
+const stepMoveEl = document.getElementById('step-move');
+const stepTextEl = document.getElementById('step-text');
+const stripEl = document.getElementById('move-strip');
+const nextButton = document.getElementById('next');
+const backButton = document.getElementById('back');
+const showButton = document.getElementById('show');
+
+function describeMove(move) {
+  const face = FACE_NAMES[move[0]];
+  if (move.endsWith('2')) return `Turn the ${face} face twice (a half turn)`;
+  return `Turn the ${face} face ${move.endsWith("'") ? 'counterclockwise' : 'clockwise'}`;
+}
+
+function startGuide(moves) {
+  guide.moves = moves;
+  guide.step = 0;
+  cube.history = [];
+  stripEl.replaceChildren(
+    ...moves.map((move, i) => {
+      const li = document.createElement('li');
+      const button = document.createElement('button');
+      button.textContent = move;
+      button.setAttribute('aria-label', `Go to move ${i + 1}: ${describeMove(move)}`);
+      button.addEventListener('click', () => goToStep(i));
+      li.appendChild(button);
+      return li;
+    }),
+  );
+  setMode('guide');
+  renderGuide();
+}
+
+function renderGuide() {
+  const { moves, step } = guide;
+  const done = step >= moves.length;
+  stepCountEl.textContent = done ? `All ${moves.length} moves done` : `Move ${step + 1} of ${moves.length}`;
+  stepMoveEl.textContent = done ? 'Solved!' : moves[step];
+  stepTextEl.textContent = done
+    ? 'Your cube is solved. Nice work!'
+    : `${describeMove(moves[step])}.`;
+  nextButton.textContent = done ? 'Finish' : 'Next';
+  backButton.disabled = step === 0;
+  showButton.disabled = done;
+  [...stripEl.children].forEach((li, i) => {
+    li.classList.toggle('done', i < step);
+    li.classList.toggle('current', i === step);
+  });
+  stripEl.children[Math.min(step, moves.length - 1)]?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  // Show the arrow for the upcoming move once the cube has stopped turning.
+  arrow.show(null);
+  cube.whenIdle().then(() => {
+    if (mode === 'guide' && guide.step === step && !done) arrow.show(moves[step]);
+  });
+}
+
+function nextStep() {
+  if (guide.step >= guide.moves.length) {
+    exitGuide();
+    return;
+  }
+  cube.play(guide.moves[guide.step], { duration: GUIDE_TURN_MS });
+  guide.step++;
+  renderGuide();
+}
+
+function previousStep() {
+  if (guide.step === 0) return;
+  guide.step--;
+  cube.play(invertMove(guide.moves[guide.step]), { record: false, duration: GUIDE_TURN_MS });
+  renderGuide();
+}
+
+function goToStep(target) {
+  const fast = Math.abs(target - guide.step) > 1 ? 140 : GUIDE_TURN_MS;
+  while (guide.step < target) cube.play(guide.moves[guide.step++], { duration: fast });
+  while (guide.step > target) cube.play(invertMove(guide.moves[--guide.step]), { record: false, duration: fast });
+  renderGuide();
+}
+
+/** Plays the upcoming move and then undoes it, so the user can watch it first. */
+function showStep() {
+  if (cube.isBusy || guide.step >= guide.moves.length) return;
+  const move = guide.moves[guide.step];
+  arrow.show(null);
+  cube.play(move, { record: false, duration: 600 });
+  cube.play(invertMove(move), { record: false, duration: 600 });
+  renderGuide();
+}
+
+function exitGuide() {
+  notice = guide.step >= guide.moves.length ? 'Solved! Scramble it again or enter another cube.' : '';
+  cube.history = [];
+  setMode('play');
+}
+
+nextButton.addEventListener('click', nextStep);
+backButton.addEventListener('click', previousStep);
+showButton.addEventListener('click', showStep);
+document.getElementById('exit').addEventListener('click', exitGuide);
+
 // ---- Rendering ----
 
 function resize() {
@@ -392,6 +491,7 @@ setMode('play');
 
 renderer.setAnimationLoop((now) => {
   cube.update(now);
+  arrow.update(now);
   // Gently pulse any stickers flagged by the cube check.
   const pulse = 0.25 + 0.25 * Math.sin(now / 160);
   for (const s of highlighted) s.material.emissiveIntensity = pulse;

@@ -19,7 +19,6 @@
         <div class="moves" id="moves"></div>
         <div class="actions">
           <button id="solve" class="primary">Solve</button>
-          <button id="watch" class="primary" hidden>Watch it solve</button>
           <button id="enter">Enter my cube</button>
           <button id="scramble">Scramble</button>
           <button id="undo">Undo</button>
@@ -32,6 +31,23 @@
           <button id="check" class="primary">Check my cube</button>
           <button id="clear">Clear</button>
           <button id="cancel">Cancel</button>
+        </div>
+      </div>
+      <div class="panel" id="guide-panel" hidden>
+        <div class="step-card" aria-live="polite">
+          <p class="step-count" id="step-count"></p>
+          <p class="step-move" id="step-move"></p>
+          <p class="step-text" id="step-text"></p>
+          <p class="step-tip">Clockwise means as you look straight at that face. The arrow on the cube shows the turn.</p>
+        </div>
+        <ol class="move-strip" id="move-strip"></ol>
+        <div class="actions guide-actions">
+          <button id="back">Back</button>
+          <button id="next" class="primary">Next</button>
+        </div>
+        <div class="actions">
+          <button id="show" class="quiet">Show me this move</button>
+          <button id="exit" class="quiet">Exit</button>
         </div>
       </div>
       <p class="status" id="status" aria-live="polite"></p>
