@@ -4,61 +4,120 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Rubix Solver</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header class="top">
-      <h1>Rubix Solver</h1>
-      <p class="hint" id="hint"></p>
-    </header>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="mark" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </span>
+          <span class="wordmark">Rubix Solver</span>
+        </div>
+        <ol class="flow" id="flow" aria-label="Progress">
+          <li data-flow="enter">Enter</li>
+          <li data-flow="solve">Solve</li>
+          <li data-flow="learn">Learn</li>
+        </ol>
+      </header>
 
-    <div id="stage"></div>
+      <main class="layout">
+        <section class="viewport" aria-label="3D cube">
+          <div id="stage"></div>
+          <p class="viewport-hint" id="hint"></p>
+          <button class="icon-btn view-reset" id="view-reset" aria-label="Reset the view" title="Reset the view">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4.5h4.5" /></svg>
+          </button>
+          <ol class="timeline" id="move-strip" aria-label="All moves" hidden></ol>
+        </section>
 
-    <footer class="controls">
-      <div class="panel" id="play-panel">
-        <div class="moves" id="moves"></div>
-        <div class="actions">
-          <button id="solve" class="primary">Solve</button>
-          <button id="enter">Enter my cube</button>
-          <button id="scramble">Scramble</button>
-          <button id="undo">Undo</button>
-          <button id="reset">Reset</button>
-        </div>
-      </div>
-      <div class="panel" id="paint-panel" hidden>
-        <div class="palette" id="palette"></div>
-        <div class="actions">
-          <button id="check" class="primary">Check my cube</button>
-          <button id="clear">Clear</button>
-          <button id="cancel">Cancel</button>
-        </div>
-      </div>
-      <div class="panel" id="guide-panel" hidden>
-        <div class="step-card" aria-live="polite">
-          <p class="step-stage" id="step-stage"></p>
-          <p class="step-count" id="step-count"></p>
-          <p class="step-move" id="step-move"></p>
-          <p class="step-text" id="step-text"></p>
-          <p class="step-tip" id="step-tip">Clockwise means as you look straight at that face. The arrow on the cube shows the turn.</p>
-          <div class="why">
-            <p class="step-why" id="step-why"></p>
-            <p class="stage-intro" id="stage-intro" hidden></p>
-            <button class="link" id="about-stage" aria-controls="stage-intro">How does this stage work?</button>
-          </div>
-          <div class="meters" id="meters"></div>
-        </div>
-        <ol class="move-strip" id="move-strip"></ol>
-        <div class="actions guide-actions">
-          <button id="back">Back</button>
-          <button id="next" class="primary">Next</button>
-        </div>
-        <div class="actions">
-          <button id="show" class="quiet">Show me this move</button>
-          <button id="exit" class="quiet">Exit</button>
-        </div>
-      </div>
-      <p class="status" id="status" aria-live="polite"></p>
-    </footer>
+        <aside class="panel">
+          <section class="mode" id="play-panel">
+            <p class="eyebrow" id="play-eyebrow">Welcome</p>
+            <h2 id="play-title">Solve any Rubik's cube</h2>
+            <p class="lede" id="play-lede"></p>
+            <div class="stack">
+              <button id="solve" class="btn primary" hidden>Solve it</button>
+              <button id="enter" class="btn primary">Enter my cube</button>
+              <button id="scramble" class="btn">Try a random scramble</button>
+            </div>
+            <details class="freeplay">
+              <summary>Turn it yourself</summary>
+              <p class="small">Drag any face of the cube, or use these buttons. On a keyboard, press U, D, L, R, F or B, and hold Shift to turn the other way.</p>
+              <div class="moves" id="moves"></div>
+              <div class="row">
+                <button id="undo" class="btn small">Undo</button>
+                <button id="reset" class="btn small">Reset to solved</button>
+              </div>
+            </details>
+          </section>
+
+          <section class="mode" id="paint-panel" hidden>
+            <p class="eyebrow">Enter your cube</p>
+            <h2>Paint the stickers</h2>
+            <ol class="howto">
+              <li>Hold your cube with <b>white on top</b> and <b>green facing you</b>.</li>
+              <li>Pick a color, then tap stickers to match your cube.</li>
+              <li>Drag the background to see the back and bottom.</li>
+            </ol>
+            <div class="palette" id="palette"></div>
+            <div class="meter wide" id="paint-meter">
+              <span class="meter-label" id="paint-count"></span>
+              <span class="meter-bar"><span id="paint-bar"></span></span>
+            </div>
+            <div class="row">
+              <button id="check" class="btn primary grow">Check my cube</button>
+              <button id="clear" class="btn">Clear</button>
+              <button id="cancel" class="btn ghost">Cancel</button>
+            </div>
+          </section>
+
+          <section class="mode" id="guide-panel" hidden>
+            <div class="stages" id="stages"></div>
+
+            <div class="step" aria-live="polite">
+              <p class="eyebrow" id="step-count"></p>
+              <h2 id="step-title"></h2>
+              <p class="step-detail" id="step-detail"></p>
+              <p class="glow-note" id="glow-note"><span class="glow-dot" aria-hidden="true"></span>The bright pieces on the cube are the ones this step fixes. Everything else is dimmed.</p>
+            </div>
+
+            <div class="current-move">
+              <div class="step-moves" id="step-moves"></div>
+              <div class="move-line">
+                <div>
+                  <p class="move-text" id="step-text"></p>
+                  <p class="move-role" id="move-role"></p>
+                </div>
+                <button class="icon-btn" id="show" aria-label="Show me this move" title="Show me this move">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="row nav">
+              <button id="back" class="btn">Back</button>
+              <button id="next" class="btn primary grow">Next</button>
+            </div>
+
+            <div class="meters" id="meters"></div>
+
+            <details class="about" id="about">
+              <summary id="about-summary"></summary>
+              <div id="stage-intro"></div>
+            </details>
+
+            <button id="exit" class="btn ghost small">Exit the guide</button>
+          </section>
+
+          <p class="status" id="status" aria-live="polite"></p>
+        </aside>
+      </main>
+    </div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

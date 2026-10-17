@@ -8,7 +8,8 @@ Enter your Rubik's cube on a 3D model, get the shortest practical solution, and 
 - [x] Step 2: Paint your cube's colors directly on the 3D cube, with a check that it is solvable
 - [x] Step 3: Two-phase solver ([min2phase.js](https://github.com/cs0x7f/min2phase.js), used under its MIT license) running in a web worker. It keeps searching for shorter solutions for about 1.5 seconds, which usually gives 18 or 19 moves.
 - [x] Step 4: Step-by-step guide. Next and Back go one move at a time, an arrow on the cube shows each turn, "Show me this move" previews it, and you can tap any move in the strip to jump there.
-- [x] Learn while you solve: every move says which stage it belongs to and why it's there (what it fixes, or which later move it sets up), with progress meters for the stage.
+- [x] Learn while you solve: the solution is grouped into steps that each have a goal ("Flip 3 edges"), the pieces a step fixes are spotlighted on the cube, every move is marked as a setup move or the one that completes the step, and progress meters track each stage.
+- [x] Redesigned layout: cube on the left with a tool panel on the right (stacked on phones), turn arrows drawn across the moving row or column, and a move timeline grouped by step.
 - [ ] Deploy to GitHub Pages
 
 ## Develop

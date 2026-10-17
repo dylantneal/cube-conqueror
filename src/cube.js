@@ -11,6 +11,9 @@ export const FACE_COLORS = {
   L: '#ff5800',
 };
 
+// Stickers outside the spotlight fade toward this.
+const DIM_COLOR = new THREE.Color(0x1a1d26);
+
 // Shown on stickers the user hasn't painted yet.
 export const BLANK_COLOR = '#3b3f4c';
 
@@ -232,6 +235,18 @@ export class RubiksCube {
   setStickerColor(sticker, color) {
     sticker.userData.color = color;
     sticker.material.color.set(color ? FACE_COLORS[color] : BLANK_COLOR);
+  }
+
+  /**
+   * Dims every sticker except `keep` (a Set of sticker meshes), so those pieces
+   * stand out. Pass null to restore full color.
+   */
+  spotlight(keep) {
+    for (const sticker of this.stickers) {
+      const { color } = sticker.userData;
+      sticker.material.color.set(color ? FACE_COLORS[color] : BLANK_COLOR);
+      if (keep && !keep.has(sticker)) sticker.material.color.lerp(DIM_COLOR, 0.94);
+    }
   }
 
   /** True for the six center stickers, which define each face's color. */

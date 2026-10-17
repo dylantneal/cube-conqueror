@@ -5,9 +5,22 @@ import { RubiksCube, randomScramble, invertMove, FACE_COLORS } from './cube.js';
 import { validateFacelets, COLOR_NAMES, FACE_ORDER } from './validate.js';
 import { solve } from './solver.js';
 import { TurnArrow } from './arrow.js';
-import { explainSolution, STAGES } from './learn/explain.js';
+import { explainSolution, locatePiece, STAGES } from './learn/explain.js';
 
-const stage = document.getElementById('stage');
+const $ = (id) => document.getElementById(id);
+
+const FACE_NAMES = { U: 'top', D: 'bottom', L: 'left', R: 'right', F: 'front', B: 'back' };
+const GUIDE_TURN_MS = 450;
+
+function describeMove(move) {
+  const face = FACE_NAMES[move[0]];
+  if (move.endsWith('2')) return `Turn the ${face} face twice (a half turn)`;
+  return `Turn the ${face} face ${move.endsWith("'") ? 'counterclockwise' : 'clockwise'}`;
+}
+
+const stage = $('stage');
+
+// ---- Scene ----
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -22,8 +35,26 @@ const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
 keyLight.position.set(5, 8, 6);
 scene.add(keyLight, new THREE.AmbientLight(0xffffff, 0.35));
 
+// A soft shadow under the cube so it sits in the space instead of floating.
+const shadowCanvas = document.createElement('canvas');
+shadowCanvas.width = shadowCanvas.height = 128;
+const sctx = shadowCanvas.getContext('2d');
+const gradient = sctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+gradient.addColorStop(0, 'rgba(0,0,0,0.55)');
+gradient.addColorStop(1, 'rgba(0,0,0,0)');
+sctx.fillStyle = gradient;
+sctx.fillRect(0, 0, 128, 128);
+const shadow = new THREE.Mesh(
+  new THREE.PlaneGeometry(5.5, 5.5),
+  new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(shadowCanvas), transparent: true, depthWrite: false }),
+);
+shadow.rotation.x = -Math.PI / 2;
+shadow.position.y = -2.3;
+scene.add(shadow);
+
+const HOME_VIEW = new THREE.Vector3(5.2, 4.2, 6.4);
 const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
-camera.position.set(5.2, 4.2, 6.4);
+camera.position.copy(HOME_VIEW);
 
 const cube = new RubiksCube();
 scene.add(cube.group);
@@ -36,8 +67,12 @@ scene.add(arrow.group);
 let mode = 'play';
 let selectedColor = 'U';
 let savedFacelets = null;
-let notice = '';
+let notice = { text: '', tone: '' };
 let highlighted = [];
+let cameraTween = null;
+let justSolved = false;
+
+// ---- Pointer input ----
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -72,6 +107,7 @@ function snapToAxis(v) {
 // Registered before the orbit controls so a drag on the cube can claim the
 // pointer before the controls start orbiting.
 renderer.domElement.addEventListener('pointerdown', (event) => {
+  cameraTween = null;
   // While guiding, the cube must follow the solution, so drags only look around.
   if (mode === 'guide') return;
   if (mode === 'paint') {
@@ -137,110 +173,141 @@ controls.enablePan = false;
 controls.minDistance = 6;
 controls.maxDistance = 16;
 
+/** Glides the camera back to the standard front-right-top view. */
+function resetView() {
+  cameraTween = { from: camera.position.clone(), start: performance.now(), duration: 700 };
+}
+$('view-reset').addEventListener('click', resetView);
+
 // ---- Panels and status ----
 
-const hintEl = document.getElementById('hint');
-const playPanel = document.getElementById('play-panel');
-const paintPanel = document.getElementById('paint-panel');
-const guidePanel = document.getElementById('guide-panel');
-const statusEl = document.getElementById('status');
-const paletteEl = document.getElementById('palette');
+const hintEl = $('hint');
+const statusEl = $('status');
+const panels = { play: $('play-panel'), paint: $('paint-panel'), guide: $('guide-panel') };
+const flowEl = $('flow');
+const stripEl = $('move-strip');
 
 const HINTS = {
   play: 'Drag a face to turn it. Drag the background to look around.',
-  guide: 'Hold your cube with white on top and green facing you. Do each move on your cube, then tap Next.',
-  paint: 'Hold your cube with the white center on top and green facing you. Pick a color, then tap stickers to match. Drag to look around.',
+  paint: 'Tap a sticker to paint it. Drag to look around.',
+  guide: 'White on top, green facing you. Follow the arrows.',
 };
 
-function renderStatus() {
-  statusEl.classList.remove('error', 'success');
-  if (mode !== 'play') {
-    statusEl.textContent = mode === 'paint' ? notice : '';
-    return;
-  }
-  if (notice && !cube.history.length) {
-    statusEl.textContent = notice;
-    statusEl.classList.add('success');
-  } else if (cube.history.length && !cube.isBusy && cube.isSolved()) {
-    statusEl.textContent = 'Solved!';
-    statusEl.classList.add('success');
-  } else if (cube.history.length) {
-    statusEl.textContent = `Moves: ${cube.history.slice(-24).join(' ')}`;
-  } else {
-    statusEl.textContent = 'Turn the cube, scramble it, or enter your own cube.';
-  }
+function setNotice(text, tone = '') {
+  notice = { text, tone };
+  renderStatus();
 }
 
-function showError(message) {
-  notice = message;
-  renderStatus();
-  statusEl.classList.add('error');
+function renderStatus() {
+  statusEl.textContent = notice.text;
+  statusEl.className = `status ${notice.tone}`;
+}
+
+function renderFlow() {
+  const current = mode === 'paint' ? 'enter' : mode === 'guide' ? 'learn' : cube.isSolved() ? null : 'solve';
+  const order = ['enter', 'solve', 'learn'];
+  const index = order.indexOf(current);
+  for (const li of flowEl.children) {
+    const i = order.indexOf(li.dataset.flow);
+    li.classList.toggle('current', i === index);
+    li.classList.toggle('done', index > -1 && i < index);
+  }
 }
 
 function setMode(next) {
   mode = next;
   hintEl.textContent = HINTS[mode];
-  playPanel.hidden = mode !== 'play';
-  paintPanel.hidden = mode !== 'paint';
-  guidePanel.hidden = mode !== 'guide';
-  if (mode !== 'guide') arrow.show(null);
+  for (const [name, el] of Object.entries(panels)) el.hidden = name !== mode;
+  stripEl.hidden = mode !== 'guide';
+  if (mode !== 'guide') {
+    arrow.show(null);
+    cube.spotlight(null);
+  }
   setHighlight([]);
+  renderPlayPanel();
+  renderFlow();
   renderStatus();
 }
 
-cube.onChange = renderStatus;
-
 // ---- Play mode ----
 
-const movesEl = document.getElementById('moves');
+function renderPlayPanel() {
+  if (mode !== 'play') return;
+  const solved = cube.isSolved();
+  const eyebrow = $('play-eyebrow');
+  const title = $('play-title');
+  const lede = $('play-lede');
+  if (!solved) {
+    eyebrow.textContent = 'Ready';
+    title.textContent = 'Let\'s solve it';
+    lede.textContent = 'Tap Solve it to get the shortest solution. You\'ll go through it one move at a time, with an explanation of what each move does.';
+  } else if (justSolved) {
+    eyebrow.textContent = 'Solved';
+    title.textContent = 'Nice work!';
+    lede.textContent = 'Your cube is solved. Enter another one, or try a random scramble.';
+  } else {
+    eyebrow.textContent = 'Welcome';
+    title.textContent = 'Solve any Rubik\'s cube';
+    lede.textContent = 'Paint your cube\'s colors onto the 3D cube, get the shortest solution, and learn what every move is doing.';
+  }
+  $('solve').hidden = solved;
+  $('enter').classList.toggle('primary', solved);
+}
+
+cube.onChange = () => {
+  if (mode !== 'play') return;
+  if (cube.history.length) {
+    // A turn makes earlier messages stale.
+    justSolved = false;
+    notice = { text: '', tone: '' };
+  }
+  renderPlayPanel();
+  renderFlow();
+  renderStatus();
+};
+
+const movesEl = $('moves');
 for (const face of ['U', 'D', 'L', 'R', 'F', 'B']) {
   for (const move of [face, `${face}'`]) {
     const button = document.createElement('button');
     button.textContent = move;
-    button.title = `Turn ${move}`;
+    button.title = describeMove(move);
     button.addEventListener('click', () => cube.play(move));
     movesEl.appendChild(button);
   }
 }
 
-document.getElementById('scramble').addEventListener('click', () => {
+$('scramble').addEventListener('click', () => {
   if (cube.isBusy) return;
-  notice = '';
+  setNotice('');
   cube.play(randomScramble(), { duration: 110 });
 });
-const solveButton = document.getElementById('solve');
 
+const solveButton = $('solve');
 solveButton.addEventListener('click', async () => {
   if (cube.isBusy) return;
   const state = cube.getStateString();
   const check = validateFacelets([...state]);
   if (!check.ok) {
-    showError(check.message);
+    setNotice(check.message, 'error');
     return;
   }
   solveButton.disabled = true;
-  notice = '';
-  statusEl.classList.remove('error', 'success');
-  statusEl.textContent = 'Finding the shortest solution...';
+  solveButton.textContent = 'Finding the shortest solution...';
   try {
     const moves = await solve(state);
-    if (moves.length) {
-      startGuide(moves, state);
-    } else {
-      notice = 'Already solved!';
-      cube.history = [];
-      renderStatus();
-    }
+    if (moves.length) startGuide(moves, state);
   } catch (err) {
-    showError(`The solver couldn't solve this cube (${err.message}).`);
+    setNotice(`The solver couldn't solve this cube (${err.message}).`, 'error');
   } finally {
     solveButton.disabled = false;
+    solveButton.textContent = 'Solve it';
   }
 });
 
-document.getElementById('undo').addEventListener('click', () => cube.undo());
-document.getElementById('reset').addEventListener('click', () => {
-  notice = '';
+$('undo').addEventListener('click', () => cube.undo());
+$('reset').addEventListener('click', () => {
+  setNotice('');
   cube.reset();
 });
 
@@ -262,6 +329,7 @@ window.addEventListener('keydown', (event) => {
 
 // ---- Paint mode ----
 
+const paletteEl = $('palette');
 const swatches = {};
 for (const color of FACE_ORDER) {
   const button = document.createElement('button');
@@ -279,19 +347,22 @@ function selectColor(color) {
   for (const [c, button] of Object.entries(swatches)) button.classList.toggle('selected', c === color);
 }
 
-function colorCounts() {
-  const counts = Object.fromEntries(FACE_ORDER.map((c) => [c, 0]));
-  for (const c of cube.getFacelets()) if (c) counts[c]++;
-  return counts;
-}
-
 function updatePalette() {
-  const counts = colorCounts();
+  const counts = Object.fromEntries(FACE_ORDER.map((c) => [c, 0]));
+  let painted = 0;
+  for (const c of cube.getFacelets()) {
+    if (!c) continue;
+    counts[c]++;
+    painted++;
+  }
   for (const [c, button] of Object.entries(swatches)) {
     button.querySelector('.count').textContent = `${counts[c]}/9`;
     button.classList.toggle('full', counts[c] >= 9);
     button.classList.toggle('over', counts[c] > 9);
   }
+  // The six centers come pre-painted.
+  $('paint-count').textContent = `${painted - 6} of 48 stickers painted`;
+  $('paint-bar').style.width = `${((painted - 6) / 48) * 100}%`;
   return counts;
 }
 
@@ -306,14 +377,12 @@ function paintAt(event) {
   const sticker = hit && cube.stickers.includes(hit.object) ? hit.object : null;
   if (!sticker) return;
   if (cube.isCenter(sticker)) {
-    notice = 'Centers stay put on a real cube, so they set the color of each face.';
-    renderStatus();
+    setNotice('Centers never move on a real cube, so they set the color of each face.');
     return;
   }
   cube.setStickerColor(sticker, selectedColor);
   setHighlight([]);
-  notice = '';
-  renderStatus();
+  setNotice('');
   const counts = updatePalette();
   // Once a color has all nine stickers, move on to the next unfinished one.
   if (counts[selectedColor] === 9) {
@@ -328,158 +397,191 @@ function setHighlight(stickers) {
   for (const s of highlighted) s.material.emissive.set(0xffffff);
 }
 
-document.getElementById('enter').addEventListener('click', () => {
+$('enter').addEventListener('click', () => {
   if (cube.isBusy) return;
   savedFacelets = cube.getFacelets();
   cube.reset();
   blankAll();
-  notice = '';
+  notice = { text: '', tone: '' };
   setMode('paint');
   selectColor('U');
   updatePalette();
+  resetView();
 });
 
-document.getElementById('check').addEventListener('click', () => {
+$('check').addEventListener('click', () => {
   const result = validateFacelets(cube.getFacelets());
   if (!result.ok) {
     const stickers = cube.getFaceletStickers();
     setHighlight(result.stickers.map((i) => stickers[i]));
-    showError(result.message);
+    setNotice(result.message, 'error');
     return;
   }
   cube.history = [];
-  notice = 'Your cube is in! Tap Solve to find the shortest solution.';
+  justSolved = false;
+  notice = { text: '', tone: '' };
   setMode('play');
 });
 
-document.getElementById('clear').addEventListener('click', () => {
+$('clear').addEventListener('click', () => {
   blankAll();
   setHighlight([]);
-  notice = '';
+  setNotice('');
   selectColor('U');
   updatePalette();
-  renderStatus();
 });
 
-document.getElementById('cancel').addEventListener('click', () => {
+$('cancel').addEventListener('click', () => {
   cube.reset();
   if (savedFacelets) cube.setFacelets(savedFacelets);
   cube.history = [];
-  notice = '';
+  notice = { text: '', tone: '' };
   setMode('play');
 });
 
 // ---- Guide mode ----
 
-const FACE_NAMES = { U: 'top', D: 'bottom', L: 'left', R: 'right', F: 'front', B: 'back' };
-const GUIDE_TURN_MS = 450;
+const guide = { moves: [], plan: null, step: 0 };
+const chipEls = [];
 
-const guide = { moves: [], explanations: [], step: 0, aboutOpen: false };
-const stepCountEl = document.getElementById('step-count');
-const stepMoveEl = document.getElementById('step-move');
-const stepTextEl = document.getElementById('step-text');
-const stripEl = document.getElementById('move-strip');
-const nextButton = document.getElementById('next');
-const backButton = document.getElementById('back');
-const showButton = document.getElementById('show');
-const stepStageEl = document.getElementById('step-stage');
-const stepTipEl = document.getElementById('step-tip');
-const stepWhyEl = document.getElementById('step-why');
-const stageIntroEl = document.getElementById('stage-intro');
-const aboutButton = document.getElementById('about-stage');
-const metersEl = document.getElementById('meters');
+function startGuide(moves, state) {
+  guide.moves = moves;
+  guide.plan = explainSolution(state, moves);
+  guide.step = 0;
+  cube.history = [];
+  chipEls.length = 0;
+  stripEl.replaceChildren(
+    ...guide.plan.steps.map((step) => {
+      const li = document.createElement('li');
+      li.className = `group stage-${step.stage}`;
+      for (let i = step.start; i <= step.end; i++) {
+        const button = document.createElement('button');
+        button.textContent = moves[i];
+        button.setAttribute('aria-label', `Go to move ${i + 1}: ${describeMove(moves[i])}`);
+        button.addEventListener('click', () => goToStep(i));
+        li.appendChild(button);
+        chipEls.push(button);
+      }
+      return li;
+    }),
+  );
+  $('about').open = false;
+  setMode('guide');
+  resetView();
+  renderGuide();
+}
+
+function renderStages(index) {
+  const { plan, moves } = guide;
+  const ranges = { 1: [0, plan.split], 2: [plan.split, moves.length] };
+  $('stages').replaceChildren(
+    ...[1, 2].map((n) => {
+      const [from, to] = ranges[n];
+      const done = Math.min(Math.max(index - from, 0), to - from);
+      const current = index < moves.length ? plan.moves[index].stage === n : n === 2;
+      const seg = document.createElement('div');
+      seg.className = `stage-seg${current ? ' current' : ''}`;
+      seg.style.setProperty('--seg-color', n === 1 ? 'var(--stage-1)' : 'var(--stage-2)');
+      seg.innerHTML = '<span class="seg-label"></span><span class="meter-bar"><span></span></span>';
+      seg.querySelector('.seg-label').textContent = `Stage ${n} · ${STAGES[n].title}`;
+      const finished = to > from ? done / (to - from) : index >= to ? 1 : 0;
+      seg.querySelector('.meter-bar span').style.width = `${finished * 100}%`;
+      return seg;
+    }),
+  );
+}
 
 const METERS = {
   1: [
-    ['cornersAligned', 8, 'Corners pointing right'],
-    ['edgesAligned', 12, 'Edges pointing right'],
-    ['middleEdgesInMiddle', 4, 'Middle edges in place'],
+    ['cornersAligned', 8, 'Corners upright'],
+    ['edgesAligned', 12, 'Edges flipped right'],
+    ['middleEdgesInMiddle', 4, 'Middle edges placed'],
   ],
   2: [['piecesHome', 20, 'Pieces home']],
 };
 
-function describeMove(move) {
-  const face = FACE_NAMES[move[0]];
-  if (move.endsWith('2')) return `Turn the ${face} face twice (a half turn)`;
-  return `Turn the ${face} face ${move.endsWith("'") ? 'counterclockwise' : 'clockwise'}`;
-}
-
-function startGuide(moves, state) {
-  guide.moves = moves;
-  guide.explanations = explainSolution(state, moves);
-  guide.step = 0;
-  guide.aboutOpen = false;
-  cube.history = [];
-  stripEl.replaceChildren(
-    ...moves.map((move, i) => {
-      const li = document.createElement('li');
-      const button = document.createElement('button');
-      button.textContent = move;
-      button.setAttribute('aria-label', `Go to move ${i + 1}: ${describeMove(move)}`);
-      button.addEventListener('click', () => goToStep(i));
-      li.appendChild(button);
-      const stage = guide.explanations[i].stage;
-      li.classList.add(`stage-${stage}`);
-      if (i > 0 && stage !== guide.explanations[i - 1].stage) li.classList.add('stage-start');
-      return li;
-    }),
-  );
-  setMode('guide');
-  renderGuide();
-}
-
-function renderGuide() {
-  const { moves, step } = guide;
-  const done = step >= moves.length;
-  stepCountEl.textContent = done ? `All ${moves.length} moves done` : `Move ${step + 1} of ${moves.length}`;
-  stepMoveEl.textContent = done ? 'Solved!' : moves[step];
-  stepTextEl.textContent = done
-    ? 'Your cube is solved. Nice work!'
-    : `${describeMove(moves[step])}.`;
-  const explanation = guide.explanations[step];
-  const stage = done ? 2 : explanation.stage;
-  const firstOfStage = !done && (step === 0 || guide.explanations[step - 1].stage !== stage);
-  if (firstOfStage) guide.aboutOpen = false;
-  stepStageEl.textContent = done ? 'Solved' : `Stage ${stage} of 2 · ${STAGES[stage].title}`;
-  stepTipEl.hidden = step !== 0;
-  stepWhyEl.textContent = done ? '' : explanation.why;
-  stageIntroEl.textContent = STAGES[stage].intro;
-  stageIntroEl.hidden = done || !(firstOfStage || guide.aboutOpen);
-  aboutButton.hidden = done || !stageIntroEl.hidden;
-  renderMeters(stage, done ? guide.explanations.at(-1).progress : explanation.before);
-  nextButton.textContent = done ? 'Finish' : 'Next';
-  backButton.disabled = step === 0;
-  showButton.disabled = done;
-  [...stripEl.children].forEach((li, i) => {
-    li.classList.toggle('done', i < step);
-    li.classList.toggle('current', i === step);
-  });
-  stripEl.children[Math.min(step, moves.length - 1)]?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-  // Show the arrow for the upcoming move once the cube has stopped turning.
-  arrow.show(null);
-  cube.whenIdle().then(() => {
-    if (mode === 'guide' && guide.step === step && !done) arrow.show(moves[step]);
-  });
-}
-
-function renderMeters(stage, progress) {
-  metersEl.replaceChildren(
-    ...METERS[stage].map(([key, total, label]) => {
+function renderMeters(stageNumber, progress) {
+  $('meters').replaceChildren(
+    ...METERS[stageNumber].map(([key, total, label]) => {
       const meter = document.createElement('div');
-      meter.className = 'meter';
+      meter.className = `meter stage-${stageNumber}${progress[key] === total ? ' full' : ''}`;
       meter.innerHTML = '<span class="meter-label"></span><span class="meter-bar"><span></span></span>';
       meter.querySelector('.meter-label').textContent = `${label} ${progress[key]}/${total}`;
       meter.querySelector('.meter-bar span').style.width = `${(progress[key] / total) * 100}%`;
-      meter.classList.toggle('full', progress[key] === total);
       return meter;
     }),
   );
 }
 
-aboutButton.addEventListener('click', () => {
-  guide.aboutOpen = true;
-  renderGuide();
-});
+function renderGuide() {
+  const { moves, plan, step } = guide;
+  const done = step >= moves.length;
+  const info = plan.moves[Math.min(step, moves.length - 1)];
+  const group = plan.steps[info.step];
+  const stageNumber = info.stage;
+
+  renderStages(step);
+
+  if (done) {
+    $('step-count').textContent = `All ${moves.length} moves done`;
+    $('step-title').textContent = 'Solved!';
+    $('step-detail').textContent = 'Every piece is home. Your cube should match the one on screen.';
+  } else {
+    $('step-count').textContent = `Step ${info.step + 1} of ${plan.steps.length} · Move ${step + 1} of ${moves.length}`;
+    $('step-title').textContent = group.title;
+    $('step-detail').textContent = group.detail;
+  }
+  $('glow-note').hidden = done;
+
+  // The moves in this step, with the current one emphasized.
+  $('step-moves').replaceChildren(
+    ...moves.slice(group.start, group.end + 1).map((m, k) => {
+      const span = document.createElement('span');
+      const i = group.start + k;
+      span.textContent = m;
+      span.className = done || i < step ? 'done' : i === step ? 'current' : '';
+      return span;
+    }),
+  );
+  if (done) {
+    $('step-text').textContent = 'That was the last move.';
+    $('move-role').textContent = '';
+  } else {
+    $('step-text').textContent = describeMove(moves[step]);
+    const role = info.role === 'payoff'
+      ? 'This move completes the step.'
+      : 'Setup move: it gets pieces into position for the end of this step.';
+    $('move-role').textContent = step === 0 ? `${role} Clockwise means as you look straight at that face.` : role;
+  }
+
+  $('next').textContent = done ? 'Finish' : 'Next move';
+  $('back').disabled = step === 0;
+  $('show').disabled = done;
+
+  renderMeters(stageNumber, done ? info.after : info.before);
+  $('about-summary').textContent = `How does stage ${stageNumber} work?`;
+  $('stage-intro').replaceChildren(
+    ...STAGES[stageNumber].intro.map((text) => Object.assign(document.createElement('p'), { textContent: text })),
+  );
+
+  chipEls.forEach((chip, i) => {
+    chip.classList.toggle('done', i < step);
+    chip.classList.toggle('current', i === step);
+  });
+  [...stripEl.children].forEach((li, n) => li.classList.toggle('current', !done && n === info.step));
+  chipEls[Math.min(step, moves.length - 1)]?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+
+  // Arrows and the spotlight appear once the cube has stopped turning.
+  arrow.show(null);
+  cube.spotlight(null);
+  cube.whenIdle().then(() => {
+    if (mode !== 'guide' || guide.step !== step || done) return;
+    arrow.show(moves[step]);
+    const state = cube.getStateString();
+    const stickers = cube.getFaceletStickers();
+    cube.spotlight(new Set(group.pieces.flatMap((key) => locatePiece(state, key)).map((i) => stickers[i])));
+  });
+}
 
 function nextStep() {
   if (guide.step >= guide.moves.length) {
@@ -509,22 +611,22 @@ function goToStep(target) {
 function showStep() {
   if (cube.isBusy || guide.step >= guide.moves.length) return;
   const move = guide.moves[guide.step];
-  arrow.show(null);
   cube.play(move, { record: false, duration: 600 });
   cube.play(invertMove(move), { record: false, duration: 600 });
   renderGuide();
 }
 
 function exitGuide() {
-  notice = guide.step >= guide.moves.length ? 'Solved! Scramble it again or enter another cube.' : '';
+  justSolved = guide.step >= guide.moves.length && cube.isSolved();
   cube.history = [];
+  notice = { text: '', tone: '' };
   setMode('play');
 }
 
-nextButton.addEventListener('click', nextStep);
-backButton.addEventListener('click', previousStep);
-showButton.addEventListener('click', showStep);
-document.getElementById('exit').addEventListener('click', exitGuide);
+$('next').addEventListener('click', nextStep);
+$('back').addEventListener('click', previousStep);
+$('show').addEventListener('click', showStep);
+$('exit').addEventListener('click', exitGuide);
 
 // ---- Rendering ----
 
@@ -540,11 +642,19 @@ new ResizeObserver(resize).observe(stage);
 resize();
 setMode('play');
 
+const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+
 renderer.setAnimationLoop((now) => {
   cube.update(now);
   arrow.update(now);
-  // Gently pulse any stickers flagged by the cube check.
-  const pulse = 0.25 + 0.25 * Math.sin(now / 160);
+  if (cameraTween) {
+    const t = Math.min(1, (now - cameraTween.start) / cameraTween.duration);
+    camera.position.lerpVectors(cameraTween.from, HOME_VIEW, easeInOut(t));
+    camera.lookAt(0, 0, 0);
+    if (t === 1) cameraTween = null;
+  }
+  // Gently pulse highlighted stickers.
+  const pulse = 0.22 + 0.22 * Math.sin(now / 180);
   for (const s of highlighted) s.material.emissiveIntensity = pulse;
   controls.update();
   renderer.render(scene, camera);
