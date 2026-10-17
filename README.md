@@ -1,0 +1,24 @@
+# Rubix Solver
+
+Enter your Rubik's cube on a 3D model, get the shortest practical solution, and watch the same cube solve itself step by step.
+
+## Status
+
+- [x] Step 1: 3D cube with realistic layer turns (drag a face, use the buttons, or press U/D/L/R/F/B; Shift for counterclockwise)
+- [ ] Step 2: Paint your cube's colors directly on the 3D cube, with validation
+- [ ] Step 3: Two-phase (Kociemba) solver running in the browser
+- [ ] Step 4: Step-by-step solution playback, mobile polish, GitHub Pages deploy
+
+## Develop
+
+```sh
+npm install
+npm run dev      # local dev server
+npm run build    # production build in dist/
+```
+
+## Code layout
+
+- `src/cube.js`: the cube model. Builds the 26 pieces, queues and animates turns, and reads back sticker colors (`getFacelets()`).
+- `src/main.js`: scene, lighting, camera, drag-to-turn, buttons and keyboard.
+- `src/style.css`: page styles.

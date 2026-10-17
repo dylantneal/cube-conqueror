@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Rubix Solver</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <h1>Rubix Solver</h1>
+      <p class="hint">Drag a face to turn it. Drag the background to look around.</p>
+    </header>
+
+    <div id="stage"></div>
+
+    <footer class="controls">
+      <div class="moves" id="moves"></div>
+      <div class="actions">
+        <button id="scramble" class="primary">Scramble</button>
+        <button id="undo">Undo</button>
+        <button id="reset">Reset</button>
+      </div>
+      <p class="history" id="history" aria-live="polite"></p>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
