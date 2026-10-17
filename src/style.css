@@ -227,3 +227,79 @@ button.quiet {
 }
 
 button.quiet:hover { color: var(--text); background: var(--button); }
+
+.step-stage {
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.why {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  text-align: left;
+  /* Keep the cube visible on short screens; long explanations scroll. */
+  max-height: 28vh;
+  overflow-y: auto;
+}
+
+.step-why { font-size: 0.9rem; line-height: 1.4; }
+
+.stage-intro {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+button.link {
+  justify-self: start;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+button.link:hover { background: none; text-decoration: underline; }
+
+.meters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 14px;
+  margin-top: 8px;
+}
+
+.meter {
+  display: grid;
+  gap: 3px;
+  min-width: 7.5em;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.meter-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+
+.meter.full { color: var(--success); }
+.meter.full .meter-bar span { background: var(--success); }
+
+.move-strip .stage-start { margin-left: 10px; }
+.move-strip .stage-2 button { border-style: dashed; }

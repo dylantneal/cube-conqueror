@@ -5,6 +5,7 @@ import { RubiksCube, randomScramble, invertMove, FACE_COLORS } from './cube.js';
 import { validateFacelets, COLOR_NAMES, FACE_ORDER } from './validate.js';
 import { solve } from './solver.js';
 import { TurnArrow } from './arrow.js';
+import { explainSolution, STAGES } from './learn/explain.js';
 
 const stage = document.getElementById('stage');
 
@@ -224,7 +225,7 @@ solveButton.addEventListener('click', async () => {
   try {
     const moves = await solve(state);
     if (moves.length) {
-      startGuide(moves);
+      startGuide(moves, state);
     } else {
       notice = 'Already solved!';
       cube.history = [];
@@ -373,7 +374,7 @@ document.getElementById('cancel').addEventListener('click', () => {
 const FACE_NAMES = { U: 'top', D: 'bottom', L: 'left', R: 'right', F: 'front', B: 'back' };
 const GUIDE_TURN_MS = 450;
 
-const guide = { moves: [], step: 0 };
+const guide = { moves: [], explanations: [], step: 0, aboutOpen: false };
 const stepCountEl = document.getElementById('step-count');
 const stepMoveEl = document.getElementById('step-move');
 const stepTextEl = document.getElementById('step-text');
@@ -381,6 +382,21 @@ const stripEl = document.getElementById('move-strip');
 const nextButton = document.getElementById('next');
 const backButton = document.getElementById('back');
 const showButton = document.getElementById('show');
+const stepStageEl = document.getElementById('step-stage');
+const stepTipEl = document.getElementById('step-tip');
+const stepWhyEl = document.getElementById('step-why');
+const stageIntroEl = document.getElementById('stage-intro');
+const aboutButton = document.getElementById('about-stage');
+const metersEl = document.getElementById('meters');
+
+const METERS = {
+  1: [
+    ['cornersAligned', 8, 'Corners pointing right'],
+    ['edgesAligned', 12, 'Edges pointing right'],
+    ['middleEdgesInMiddle', 4, 'Middle edges in place'],
+  ],
+  2: [['piecesHome', 20, 'Pieces home']],
+};
 
 function describeMove(move) {
   const face = FACE_NAMES[move[0]];
@@ -388,9 +404,11 @@ function describeMove(move) {
   return `Turn the ${face} face ${move.endsWith("'") ? 'counterclockwise' : 'clockwise'}`;
 }
 
-function startGuide(moves) {
+function startGuide(moves, state) {
   guide.moves = moves;
+  guide.explanations = explainSolution(state, moves);
   guide.step = 0;
+  guide.aboutOpen = false;
   cube.history = [];
   stripEl.replaceChildren(
     ...moves.map((move, i) => {
@@ -400,6 +418,9 @@ function startGuide(moves) {
       button.setAttribute('aria-label', `Go to move ${i + 1}: ${describeMove(move)}`);
       button.addEventListener('click', () => goToStep(i));
       li.appendChild(button);
+      const stage = guide.explanations[i].stage;
+      li.classList.add(`stage-${stage}`);
+      if (i > 0 && stage !== guide.explanations[i - 1].stage) li.classList.add('stage-start');
       return li;
     }),
   );
@@ -415,6 +436,17 @@ function renderGuide() {
   stepTextEl.textContent = done
     ? 'Your cube is solved. Nice work!'
     : `${describeMove(moves[step])}.`;
+  const explanation = guide.explanations[step];
+  const stage = done ? 2 : explanation.stage;
+  const firstOfStage = !done && (step === 0 || guide.explanations[step - 1].stage !== stage);
+  if (firstOfStage) guide.aboutOpen = false;
+  stepStageEl.textContent = done ? 'Solved' : `Stage ${stage} of 2 · ${STAGES[stage].title}`;
+  stepTipEl.hidden = step !== 0;
+  stepWhyEl.textContent = done ? '' : explanation.why;
+  stageIntroEl.textContent = STAGES[stage].intro;
+  stageIntroEl.hidden = done || !(firstOfStage || guide.aboutOpen);
+  aboutButton.hidden = done || !stageIntroEl.hidden;
+  renderMeters(stage, done ? guide.explanations.at(-1).progress : explanation.before);
   nextButton.textContent = done ? 'Finish' : 'Next';
   backButton.disabled = step === 0;
   showButton.disabled = done;
@@ -429,6 +461,25 @@ function renderGuide() {
     if (mode === 'guide' && guide.step === step && !done) arrow.show(moves[step]);
   });
 }
+
+function renderMeters(stage, progress) {
+  metersEl.replaceChildren(
+    ...METERS[stage].map(([key, total, label]) => {
+      const meter = document.createElement('div');
+      meter.className = 'meter';
+      meter.innerHTML = '<span class="meter-label"></span><span class="meter-bar"><span></span></span>';
+      meter.querySelector('.meter-label').textContent = `${label} ${progress[key]}/${total}`;
+      meter.querySelector('.meter-bar span').style.width = `${(progress[key] / total) * 100}%`;
+      meter.classList.toggle('full', progress[key] === total);
+      return meter;
+    }),
+  );
+}
+
+aboutButton.addEventListener('click', () => {
+  guide.aboutOpen = true;
+  renderGuide();
+});
 
 function nextStep() {
   if (guide.step >= guide.moves.length) {

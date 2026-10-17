@@ -35,10 +35,17 @@
       </div>
       <div class="panel" id="guide-panel" hidden>
         <div class="step-card" aria-live="polite">
+          <p class="step-stage" id="step-stage"></p>
           <p class="step-count" id="step-count"></p>
           <p class="step-move" id="step-move"></p>
           <p class="step-text" id="step-text"></p>
-          <p class="step-tip">Clockwise means as you look straight at that face. The arrow on the cube shows the turn.</p>
+          <p class="step-tip" id="step-tip">Clockwise means as you look straight at that face. The arrow on the cube shows the turn.</p>
+          <div class="why">
+            <p class="step-why" id="step-why"></p>
+            <p class="stage-intro" id="stage-intro" hidden></p>
+            <button class="link" id="about-stage" aria-controls="stage-intro">How does this stage work?</button>
+          </div>
+          <div class="meters" id="meters"></div>
         </div>
         <ol class="move-strip" id="move-strip"></ol>
         <div class="actions guide-actions">
