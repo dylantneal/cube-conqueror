@@ -9,19 +9,30 @@
   <body>
     <header class="top">
       <h1>Rubix Solver</h1>
-      <p class="hint">Drag a face to turn it. Drag the background to look around.</p>
+      <p class="hint" id="hint"></p>
     </header>
 
     <div id="stage"></div>
 
     <footer class="controls">
-      <div class="moves" id="moves"></div>
-      <div class="actions">
-        <button id="scramble" class="primary">Scramble</button>
-        <button id="undo">Undo</button>
-        <button id="reset">Reset</button>
+      <div class="panel" id="play-panel">
+        <div class="moves" id="moves"></div>
+        <div class="actions">
+          <button id="enter" class="primary">Enter my cube</button>
+          <button id="scramble">Scramble</button>
+          <button id="undo">Undo</button>
+          <button id="reset">Reset</button>
+        </div>
       </div>
-      <p class="history" id="history" aria-live="polite"></p>
+      <div class="panel" id="paint-panel" hidden>
+        <div class="palette" id="palette"></div>
+        <div class="actions">
+          <button id="check" class="primary">Check my cube</button>
+          <button id="clear">Clear</button>
+          <button id="cancel">Cancel</button>
+        </div>
+      </div>
+      <p class="status" id="status" aria-live="polite"></p>
     </footer>
 
     <script type="module" src="/src/main.js"></script>

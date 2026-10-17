@@ -11,6 +11,12 @@ export const FACE_COLORS = {
   L: '#ff5800',
 };
 
+// Shown on stickers the user hasn't painted yet.
+export const BLANK_COLOR = '#3b3f4c';
+
+// Face order used for facelet strings (Kociemba's layout).
+const FACELET_ORDER = ['U', 'R', 'F', 'D', 'L', 'B'];
+
 // Outward normal of each face in cube coordinates.
 const FACE_NORMALS = {
   U: new THREE.Vector3(0, 1, 0),
@@ -214,40 +220,58 @@ export class RubiksCube {
     this.onChange();
   }
 
+  setStickerColor(sticker, color) {
+    sticker.userData.color = color;
+    sticker.material.color.set(color ? FACE_COLORS[color] : BLANK_COLOR);
+  }
+
+  /** True for the six center stickers, which define each face's color. */
+  isCenter(sticker) {
+    const p = sticker.userData.cubie.position;
+    return Math.abs(p.x) + Math.abs(p.y) + Math.abs(p.z) === 1;
+  }
+
   /**
-   * Reads the color on every sticker position. Returns { U: [...9], R: [...], ... }
-   * in reading order (left to right, top to bottom) as seen looking at each face.
+   * Returns all 54 stickers in facelet order: faces U R F D L B, each read left to
+   * right, top to bottom as seen looking straight at that face.
    */
-  getFacelets() {
-    const result = {};
+  getFaceletStickers() {
+    const byFace = Object.fromEntries(FACELET_ORDER.map((f) => [f, []]));
     const worldPos = new THREE.Vector3();
     const worldNormal = new THREE.Vector3();
-    for (const face of Object.keys(FACE_NORMALS)) result[face] = [];
+    const worldQuat = new THREE.Quaternion();
     for (const sticker of this.stickers) {
       sticker.getWorldPosition(worldPos);
-      worldNormal.set(0, 0, 1).applyQuaternion(sticker.getWorldQuaternion(new THREE.Quaternion()));
-      const face = Object.keys(FACE_NORMALS).find((f) => FACE_NORMALS[f].dot(worldNormal) > 0.9);
-      result[face].push({ color: sticker.userData.color, pos: worldPos.clone() });
+      worldNormal.set(0, 0, 1).applyQuaternion(sticker.getWorldQuaternion(worldQuat));
+      const face = FACELET_ORDER.find((f) => FACE_NORMALS[f].dot(worldNormal) > 0.9);
+      byFace[face].push({ sticker, pos: worldPos.clone() });
     }
-    const order = {
+    // [row, column] of a sticker position on each face.
+    const grid = {
       U: (p) => [p.z, p.x], D: (p) => [-p.z, p.x],
       F: (p) => [-p.y, p.x], B: (p) => [-p.y, -p.x],
       R: (p) => [-p.y, -p.z], L: (p) => [-p.y, p.z],
     };
-    for (const face of Object.keys(result)) {
-      result[face] = result[face]
-        .sort((a, b) => {
-          const [ra, ca] = order[face](a.pos).map(Math.round);
-          const [rb, cb] = order[face](b.pos).map(Math.round);
-          return ra - rb || ca - cb;
-        })
-        .map((s) => s.color);
-    }
-    return result;
+    return FACELET_ORDER.flatMap((face) =>
+      byFace[face]
+        .map((s) => ({ ...s, key: grid[face](s.pos).map(Math.round) }))
+        .sort((a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1])
+        .map((s) => s.sticker),
+    );
+  }
+
+  /** The color letter (or null if blank) at each of the 54 facelets. */
+  getFacelets() {
+    return this.getFaceletStickers().map((s) => s.userData.color);
+  }
+
+  setFacelets(colors) {
+    this.getFaceletStickers().forEach((s, i) => this.setStickerColor(s, colors[i]));
   }
 
   isSolved() {
-    return Object.values(this.getFacelets()).every((colors) => colors.every((c) => c === colors[0]));
+    const colors = this.getFacelets();
+    return FACELET_ORDER.every((_, face) => colors.slice(face * 9, face * 9 + 9).every((c) => c && c === colors[face * 9]));
   }
 }
 

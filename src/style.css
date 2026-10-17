@@ -6,6 +6,8 @@
   --button: rgba(255, 255, 255, 0.08);
   --button-hover: rgba(255, 255, 255, 0.16);
   --accent: #4f8cff;
+  --error: #ff8a7a;
+  --success: #6fdc9a;
   color-scheme: dark;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--text);
@@ -38,7 +40,9 @@ h1 {
 }
 
 .hint {
-  margin: 4px 0 0;
+  margin: 4px auto 0;
+  max-width: 36em;
+  min-height: 2.6em;
   color: var(--muted);
   font-size: 0.9rem;
 }
@@ -87,12 +91,67 @@ button:hover { background: var(--button-hover); }
 button.primary { background: var(--accent); border-color: transparent; }
 button.primary:hover { background: #6b9fff; }
 
-.history {
+[hidden] { display: none !important; }
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.actions { flex-wrap: wrap; justify-content: center; }
+
+.palette {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  width: min(100%, 420px);
+}
+
+.swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+}
+
+.swatch .chip {
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 44px;
+  border-radius: 8px;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.swatch .count {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.swatch.selected {
+  border-color: var(--text);
+  background: var(--button-hover);
+}
+
+.swatch.full .count { color: var(--success); }
+.swatch.over .count { color: var(--error); }
+
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.status {
   margin: 0;
+  max-width: 36em;
   min-height: 1.3em;
   color: var(--muted);
   font-size: 0.85rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   text-align: center;
   overflow-wrap: anywhere;
 }
+
+.status.error { color: var(--error); }
+.status.success { color: var(--success); }

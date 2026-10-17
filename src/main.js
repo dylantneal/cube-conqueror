@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { RubiksCube, randomScramble } from './cube.js';
+import { RubiksCube, randomScramble, FACE_COLORS } from './cube.js';
+import { validateFacelets, COLOR_NAMES, FACE_ORDER } from './validate.js';
 
 const stage = document.getElementById('stage');
 
@@ -24,11 +25,17 @@ camera.position.set(5.2, 4.2, 6.4);
 const cube = new RubiksCube();
 scene.add(cube.group);
 
-// Drag-to-turn needs to see the pointer before the orbit controls do, so this
-// listener is registered first.
+// 'play' turns layers; 'paint' colors stickers to match the user's cube.
+let mode = 'play';
+let selectedColor = 'U';
+let savedFacelets = null;
+let notice = '';
+let highlighted = [];
+
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let drag = null;
+let tap = null;
 
 function toNdc(event) {
   const rect = renderer.domElement.getBoundingClientRect();
@@ -41,6 +48,11 @@ function toScreen(point) {
   return new THREE.Vector2(p.x, p.y);
 }
 
+function hitCube(event) {
+  raycaster.setFromCamera(toNdc(event), camera);
+  return raycaster.intersectObjects(cube.group.children, true)[0];
+}
+
 /** Rounds a vector to the nearest axis-aligned unit vector. */
 function snapToAxis(v) {
   const abs = [Math.abs(v.x), Math.abs(v.y), Math.abs(v.z)];
@@ -50,9 +62,15 @@ function snapToAxis(v) {
   return out;
 }
 
+// Registered before the orbit controls so a drag on the cube can claim the
+// pointer before the controls start orbiting.
 renderer.domElement.addEventListener('pointerdown', (event) => {
-  raycaster.setFromCamera(toNdc(event), camera);
-  const hit = raycaster.intersectObjects(cube.group.children, true)[0];
+  if (mode === 'paint') {
+    // In paint mode every drag orbits; a tap without movement paints.
+    tap = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    return;
+  }
+  const hit = hitCube(event);
   if (!hit) return;
   const normal = snapToAxis(hit.face.normal.clone().transformDirection(hit.object.matrixWorld));
   drag = {
@@ -94,9 +112,14 @@ window.addEventListener('pointermove', (event) => {
   drag = null;
 });
 
-window.addEventListener('pointerup', () => {
+window.addEventListener('pointerup', (event) => {
   drag = null;
   controls.enabled = true;
+  if (mode === 'paint' && tap && tap.pointerId === event.pointerId) {
+    const isTap = Math.hypot(event.clientX - tap.x, event.clientY - tap.y) < 6;
+    tap = null;
+    if (isTap) paintAt(event);
+  }
 });
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -105,7 +128,57 @@ controls.enablePan = false;
 controls.minDistance = 6;
 controls.maxDistance = 16;
 
-// Move buttons: each face clockwise and counterclockwise.
+// ---- Panels and status ----
+
+const hintEl = document.getElementById('hint');
+const playPanel = document.getElementById('play-panel');
+const paintPanel = document.getElementById('paint-panel');
+const statusEl = document.getElementById('status');
+const paletteEl = document.getElementById('palette');
+
+const HINTS = {
+  play: 'Drag a face to turn it. Drag the background to look around.',
+  paint: 'Hold your cube with the white center on top and green facing you. Pick a color, then tap stickers to match. Drag to look around.',
+};
+
+function renderStatus() {
+  statusEl.classList.remove('error', 'success');
+  if (mode === 'paint') {
+    statusEl.textContent = notice;
+    return;
+  }
+  if (notice && !cube.history.length) {
+    statusEl.textContent = notice;
+    statusEl.classList.add('success');
+  } else if (cube.history.length && !cube.isBusy && cube.isSolved()) {
+    statusEl.textContent = 'Solved!';
+    statusEl.classList.add('success');
+  } else if (cube.history.length) {
+    statusEl.textContent = `Moves: ${cube.history.slice(-24).join(' ')}`;
+  } else {
+    statusEl.textContent = 'Turn the cube, scramble it, or enter your own cube.';
+  }
+}
+
+function showError(message) {
+  notice = message;
+  renderStatus();
+  statusEl.classList.add('error');
+}
+
+function setMode(next) {
+  mode = next;
+  hintEl.textContent = HINTS[mode];
+  playPanel.hidden = mode !== 'play';
+  paintPanel.hidden = mode !== 'paint';
+  setHighlight([]);
+  renderStatus();
+}
+
+cube.onChange = renderStatus;
+
+// ---- Play mode ----
+
 const movesEl = document.getElementById('moves');
 for (const face of ['U', 'D', 'L', 'R', 'F', 'B']) {
   for (const move of [face, `${face}'`]) {
@@ -119,25 +192,133 @@ for (const face of ['U', 'D', 'L', 'R', 'F', 'B']) {
 
 document.getElementById('scramble').addEventListener('click', () => {
   if (cube.isBusy) return;
+  notice = '';
   cube.play(randomScramble(), { duration: 110 });
 });
 document.getElementById('undo').addEventListener('click', () => cube.undo());
-document.getElementById('reset').addEventListener('click', () => cube.reset());
+document.getElementById('reset').addEventListener('click', () => {
+  notice = '';
+  cube.reset();
+});
 
 // Keyboard: a letter turns that face, Shift turns it counterclockwise.
 window.addEventListener('keydown', (event) => {
+  if (mode !== 'play') return;
   const face = event.key.toUpperCase();
   if (!'UDLRFBMES'.includes(face) || event.metaKey || event.ctrlKey || event.key.length !== 1) return;
   cube.play(event.shiftKey ? `${face}'` : face);
 });
 
-const historyEl = document.getElementById('history');
-cube.onChange = () => {
-  const recent = cube.history.slice(-24).join(' ');
-  historyEl.textContent = cube.history.length ? `Moves: ${recent}` : 'Solved cube. Scramble it or start turning.';
-  if (cube.history.length && !cube.isBusy && cube.isSolved()) historyEl.textContent = 'Solved!';
-};
-cube.onChange();
+// ---- Paint mode ----
+
+const swatches = {};
+for (const color of FACE_ORDER) {
+  const button = document.createElement('button');
+  button.className = 'swatch';
+  button.style.setProperty('--swatch', FACE_COLORS[color]);
+  button.setAttribute('aria-label', COLOR_NAMES[color]);
+  button.innerHTML = '<span class="chip"></span><span class="count"></span>';
+  button.addEventListener('click', () => selectColor(color));
+  paletteEl.appendChild(button);
+  swatches[color] = button;
+}
+
+function selectColor(color) {
+  selectedColor = color;
+  for (const [c, button] of Object.entries(swatches)) button.classList.toggle('selected', c === color);
+}
+
+function colorCounts() {
+  const counts = Object.fromEntries(FACE_ORDER.map((c) => [c, 0]));
+  for (const c of cube.getFacelets()) if (c) counts[c]++;
+  return counts;
+}
+
+function updatePalette() {
+  const counts = colorCounts();
+  for (const [c, button] of Object.entries(swatches)) {
+    button.querySelector('.count').textContent = `${counts[c]}/9`;
+    button.classList.toggle('full', counts[c] >= 9);
+    button.classList.toggle('over', counts[c] > 9);
+  }
+  return counts;
+}
+
+function blankAll() {
+  for (const sticker of cube.stickers) {
+    if (!cube.isCenter(sticker)) cube.setStickerColor(sticker, null);
+  }
+}
+
+function paintAt(event) {
+  const hit = hitCube(event);
+  const sticker = hit && cube.stickers.includes(hit.object) ? hit.object : null;
+  if (!sticker) return;
+  if (cube.isCenter(sticker)) {
+    notice = 'Centers stay put on a real cube, so they set the color of each face.';
+    renderStatus();
+    return;
+  }
+  cube.setStickerColor(sticker, selectedColor);
+  setHighlight([]);
+  notice = '';
+  renderStatus();
+  const counts = updatePalette();
+  // Once a color has all nine stickers, move on to the next unfinished one.
+  if (counts[selectedColor] === 9) {
+    const next = FACE_ORDER.find((c) => counts[c] < 9);
+    if (next) selectColor(next);
+  }
+}
+
+function setHighlight(stickers) {
+  for (const s of highlighted) s.material.emissiveIntensity = 0;
+  highlighted = stickers;
+  for (const s of highlighted) s.material.emissive.set(0xffffff);
+}
+
+document.getElementById('enter').addEventListener('click', () => {
+  if (cube.isBusy) return;
+  savedFacelets = cube.getFacelets();
+  cube.reset();
+  blankAll();
+  notice = '';
+  setMode('paint');
+  selectColor('U');
+  updatePalette();
+});
+
+document.getElementById('check').addEventListener('click', () => {
+  const result = validateFacelets(cube.getFacelets());
+  if (!result.ok) {
+    const stickers = cube.getFaceletStickers();
+    setHighlight(result.stickers.map((i) => stickers[i]));
+    showError(result.message);
+    return;
+  }
+  cube.history = [];
+  notice = 'Your cube is in! Solving it comes in the next step.';
+  setMode('play');
+});
+
+document.getElementById('clear').addEventListener('click', () => {
+  blankAll();
+  setHighlight([]);
+  notice = '';
+  selectColor('U');
+  updatePalette();
+  renderStatus();
+});
+
+document.getElementById('cancel').addEventListener('click', () => {
+  cube.reset();
+  if (savedFacelets) cube.setFacelets(savedFacelets);
+  cube.history = [];
+  notice = '';
+  setMode('play');
+});
+
+// ---- Rendering ----
 
 function resize() {
   const { clientWidth: w, clientHeight: h } = stage;
@@ -149,9 +330,13 @@ function resize() {
 }
 new ResizeObserver(resize).observe(stage);
 resize();
+setMode('play');
 
 renderer.setAnimationLoop((now) => {
   cube.update(now);
+  // Gently pulse any stickers flagged by the cube check.
+  const pulse = 0.25 + 0.25 * Math.sin(now / 160);
+  for (const s of highlighted) s.material.emissiveIntensity = pulse;
   controls.update();
   renderer.render(scene, camera);
 });
