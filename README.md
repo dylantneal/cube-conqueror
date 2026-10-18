@@ -10,7 +10,7 @@ Enter your Rubik's cube on a 3D model, get the shortest practical solution, and 
 - [x] Step 4: Step-by-step guide. Next and Back go one move at a time, an arrow on the cube shows each turn, "Show me this move" previews it, and you can tap any move in the strip to jump there.
 - [x] Learn while you solve: the solution is grouped into steps that each have a goal ("Flip 3 edges"), the pieces a step fixes are spotlighted on the cube, every move is marked as a setup move or the one that completes the step, and progress meters track each stage.
 - [x] Redesigned layout: cube on the left with a tool panel on the right (stacked on phones), turn arrows drawn across the moving row or column, and a move timeline grouped by step.
-- [ ] Deploy to GitHub Pages
+- [ ] Deploy to Vercel
 
 ## Develop
 
@@ -19,6 +19,10 @@ npm install
 npm run dev      # local dev server
 npm run build    # production build in dist/
 ```
+
+## Deploy to Vercel
+
+Vercel detects Vite automatically: import this repository at vercel.com/new and keep the defaults (build command `npm run build`, output directory `dist`). Every push to `main` then redeploys the site.
 
 ## Code layout
 
