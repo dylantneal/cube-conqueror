@@ -3,7 +3,73 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Cube Conqueror</title>
+    <title>Cube Conqueror · Free 3D Rubik's Cube Solver That Teaches You</title>
+    <meta name="description" content="Solve any Rubik's cube in about 20 moves. Paint your cube's colors onto a 3D cube, get the shortest solution, and follow it one move at a time with an explanation of every move. Free, no sign-up." />
+    <link rel="canonical" href="https://cube-conqueror.vercel.app/" />
+    <meta name="theme-color" content="#0a0c12" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="./favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./site.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Cube Conqueror" />
+    <meta property="og:url" content="https://cube-conqueror.vercel.app/" />
+    <meta property="og:title" content="Cube Conqueror · Solve any Rubik's cube, one move at a time" />
+    <meta property="og:description" content="Paint your cube onto a 3D model, get the shortest solution, and learn what every move does." />
+    <meta property="og:image" content="https://cube-conqueror.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A 3D Rubik's cube next to the words Cube Conqueror" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Cube Conqueror · Solve any Rubik's cube, one move at a time" />
+    <meta name="twitter:description" content="Paint your cube onto a 3D model, get the shortest solution, and learn what every move does." />
+    <meta name="twitter:image" content="https://cube-conqueror.vercel.app/og-image.png" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebApplication",
+            "name": "Cube Conqueror",
+            "url": "https://cube-conqueror.vercel.app/",
+            "description": "A free Rubik's cube solver. Enter your cube's colors on a 3D cube, get the shortest solution, and follow it one move at a time with explanations.",
+            "applicationCategory": "GameApplication",
+            "operatingSystem": "Any (runs in the browser)",
+            "browserRequirements": "Requires WebGL",
+            "image": "https://cube-conqueror.vercel.app/og-image.png",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "How do I enter my Rubik's cube?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Hold your cube with white on top and green facing you. Pick a color, then tap the matching stickers on the 3D cube. Drag the background to see the back and bottom. Cube Conqueror checks that the colors make a real, solvable cube." }
+              },
+              {
+                "@type": "Question",
+                "name": "How many moves does it take to solve?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Usually about 20 moves. Cube Conqueror uses a two-phase solver that searches for the shortest solution it can find in about a second." }
+              },
+              {
+                "@type": "Question",
+                "name": "Will it teach me how to solve the cube?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. The solution is split into two stages and short steps. Each step lights up the pieces it fixes and explains why the moves work, and you go at your own pace with Next and Back." }
+              },
+              {
+                "@type": "Question",
+                "name": "Is it free?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. It is free, needs no account, and runs entirely in your browser." }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet" />
@@ -16,7 +82,7 @@
           <span class="mark" aria-hidden="true">
             <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
           </span>
-          <span class="wordmark">Cube Conqueror</span>
+          <h1 class="wordmark">Cube Conqueror</h1>
         </div>
         <ol class="flow" id="flow" aria-label="Progress">
           <li data-flow="enter">Enter</li>
@@ -39,7 +105,7 @@
           <section class="mode" id="play-panel">
             <p class="eyebrow" id="play-eyebrow">Welcome</p>
             <h2 id="play-title">Solve any Rubik's cube</h2>
-            <p class="lede" id="play-lede"></p>
+            <p class="lede" id="play-lede">Paint your cube's colors onto the 3D cube, get the shortest solution, and learn what every move is doing.</p>
             <div class="stack">
               <button id="solve" class="btn primary" hidden>Solve it</button>
               <button id="enter" class="btn primary">Enter my cube</button>
@@ -53,6 +119,17 @@
                 <button id="undo" class="btn small">Undo</button>
                 <button id="reset" class="btn small">Reset to solved</button>
               </div>
+            </details>
+            <details class="freeplay faq">
+              <summary>How it works</summary>
+              <h3>Enter your cube</h3>
+              <p class="small">Hold your cube with white on top and green facing you. Pick a color, then tap the matching stickers on the 3D cube. Cube Conqueror checks that your colors make a real, solvable cube before it solves.</p>
+              <h3>Get the shortest solution</h3>
+              <p class="small">A two-phase solver searches for the shortest solution it can find, usually around 20 moves, right in your browser.</p>
+              <h3>Learn every move</h3>
+              <p class="small">Follow the solution one move at a time with Next and Back. An arrow shows each turn, the pieces each step fixes light up, and every step explains why it works. Stage one points every piece the right way. Stage two brings every piece home.</p>
+              <h3>Free and private</h3>
+              <p class="small">No account, no download. Everything runs on your device.</p>
             </details>
           </section>
 
@@ -119,6 +196,7 @@
       </main>
     </div>
 
+    <noscript><p style="padding:20px">Cube Conqueror is a free 3D Rubik's cube solver. Turn on JavaScript to enter your cube and get a step-by-step solution.</p></noscript>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
