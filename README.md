@@ -1,4 +1,4 @@
-# Rubix Solver
+# Cube Conqueror
 
 Enter your Rubik's cube on a 3D model, get the shortest practical solution, and watch the same cube solve itself step by step.
 
